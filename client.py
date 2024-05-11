@@ -2,6 +2,7 @@ import socket
 import sys
 import tkinter as tk
 import threading
+import rsa
 
 
 class CLIENT:
@@ -14,6 +15,8 @@ class CLIENT:
         self.notConnected = True
         self.setup_boxes()
         self.name = None
+        self.public_key, self.private_key = rsa.newkeys(1024)
+        self.public_key_other = None
 
     def setup_boxes(self):
         self.name_var = tk.StringVar()
@@ -58,7 +61,6 @@ class CLIENT:
         name = self.name_var.get()
         ip = self.ip_var.get()
         port = self.port_var.get()
-        # print(name, ip, port)
         if name and ip and port and self.notConnected:
             self.ConnectButton.config(state=tk.NORMAL)
         else:
@@ -79,22 +81,32 @@ class CLIENT:
             self.on_closing()
 
     def connect_to_server(self):
-        self.notConnected = False
         self.name = self.name_var.get()
         self.ConnectButton.config(state=tk.DISABLED)
         try:
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.server_socket.connect((self.ipEntry.get(), int(self.portEntry.get())))
-            self.server_socket.sendall(self.name.encode())  # Send the client's name
+            self.public_key_other = rsa.PublicKey.load_pkcs1(
+                self.server_socket.recv(1024)
+            )
+            self.server_socket.send(self.public_key.save_pkcs1("PEM"))
+            self.server_socket.sendall(
+                rsa.encrypt(self.name.encode(), self.public_key_other)
+            )
+            self.notConnected = False
             threading.Thread(target=self.receive_messages).start()
         except Exception:
             print("Server not Found!")
+            self.notConnected = True
+            self.ConnectButton.config(state=tk.NORMAL)
 
     def receive_messages(self):
         while True:
             try:
                 data = self.server_socket.recv(1024)
-                self.text_area.insert(tk.END, data.decode("utf-8") + "\n")
+                self.text_area.insert(
+                    tk.END, rsa.decrypt(data, self.private_key).decode("utf-8") + "\n"
+                )
             except Exception:
                 pass
 
@@ -103,7 +115,9 @@ class CLIENT:
         self.msg_entry.delete(0, tk.END)
         if self.server_socket is not None:
             try:
-                self.server_socket.sendall(str.encode(message))
+                self.server_socket.sendall(
+                    rsa.encrypt(message.encode(), self.public_key_other)
+                )
                 self.text_area.insert(tk.END, message + "\n")
             except Exception:
                 pass
