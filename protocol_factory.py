@@ -179,16 +179,16 @@ class DualStackTransport(TransportProtocol):
             raise ConnectionError("No active transports")
         
         # Create accept tasks for all active transports
-        tasks = [
-            asyncio.create_task(t.accept())
-            for t in self.active_transports
-        ]
+        accept_tasks = []
+        for transport in self.active_transports:
+            task = asyncio.create_task(transport.accept())
+            accept_tasks.append(task)
         
         try:
-            done, pending = await asyncio.wait(
-                tasks,
-                return_when=asyncio.FIRST_COMPLETED
-            )
+            # Wait for the first transport to accept a connection
+            wait_fn = asyncio.wait
+            first_completed = asyncio.FIRST_COMPLETED
+            done, pending = await wait_fn(accept_tasks, return_when=first_completed)
             
             # Cancel pending tasks
             for task in pending:
