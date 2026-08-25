@@ -109,9 +109,8 @@ class CLIENT:
         
         # Status label
         self.status_var = tk.StringVar(value="Not connected")
-        ttk.Label(conn_frame, textvariable=self.status_var, foreground="red").grid(
-            row=1, column=3, columnspan=2, padx=5, pady=5, sticky="w"
-        )
+        self.status_label = ttk.Label(conn_frame, textvariable=self.status_var, foreground="red")
+        self.status_label.grid(row=1, column=3, columnspan=2, padx=5, pady=5, sticky="w")
         
         # Disconnect button
         self.DisconnectButton = ttk.Button(
@@ -174,7 +173,7 @@ class CLIENT:
         self.server_connection = None
         self.not_connected = True
         self.status_var.set("Disconnected")
-        self.status_var.config(foreground="red")
+        self.status_label.config(foreground="red")
         self.ConnectButton.config(state=tk.NORMAL)
         self.DisconnectButton.config(state=tk.DISABLED)
         self.msg_entry.config(state=tk.DISABLED)
@@ -227,7 +226,7 @@ class CLIENT:
             self.not_connected = False
             self.log_message(f"Connected via {self.protocol.upper()}!")
             self.status_var.set(f"Connected via {self.protocol.upper()}")
-            self.status_var.config(foreground="green")
+            self.status_label.config(foreground="green")
             self.DisconnectButton.config(state=tk.NORMAL)
             self.msg_entry.config(state=tk.NORMAL)
             self.SendButton.config(state=tk.NORMAL)
@@ -238,7 +237,7 @@ class CLIENT:
         except asyncio.TimeoutError:
             self.log_message("Connection timeout! Could not connect to server.")
             self.status_var.set("Connection failed (timeout)")
-            self.status_var.config(foreground="red")
+            self.status_label.config(foreground="red")
             self.not_connected = True
             self.ConnectButton.config(state=tk.NORMAL)
             self.metrics.record_error(self.conn_id)
@@ -246,7 +245,7 @@ class CLIENT:
         except Exception as e:
             self.log_message(f"Failed to connect: {e}")
             self.status_var.set(f"Connection failed: {type(e).__name__}")
-            self.status_var.config(foreground="red")
+            self.status_label.config(foreground="red")
             self.not_connected = True
             self.ConnectButton.config(state=tk.NORMAL)
             self.metrics.record_error(self.conn_id)
