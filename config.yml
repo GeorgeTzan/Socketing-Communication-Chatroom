@@ -1,0 +1,101 @@
+# [2026-08-25] Transport Protocol Configuration
+# This configuration file controls protocol selection, fallback behavior, and UTP-specific tuning
+
+# Transport Protocol Configuration
+transport:
+  # Primary protocol: 'tcp', 'utp', or 'auto' (auto prefers based on environment)
+  primary_protocol: auto
+  
+  # Enable/disable specific protocols
+  enable_tcp: true
+  enable_utp: true
+  
+  # Timeout for fallback to alternate protocol (seconds)
+  fallback_timeout: 5
+  
+  # Whether to support dual-stack (both TCP and UTP simultaneously)
+  dual_stack: true
+
+# UTP Specific Configuration
+utp:
+  # Maximum transmission unit size for UDP datagrams
+  mtu_size: 1200
+  
+  # Timeout for packet retransmission (milliseconds)
+  resend_timeout: 1000
+  
+  # Maximum window size for congestion control (bytes)
+  max_window: 32768
+  
+  # Delay between packets to avoid congestion (milliseconds)
+  packet_delay: 1
+
+# Server Configuration
+server:
+  # Bind address (use 0.0.0.0 for all interfaces)
+  host: 0.0.0.0
+  
+  # Port number for server
+  port: 5000
+  
+  # Maximum number of queued connections
+  backlog: 128
+
+# Client Configuration
+client:
+  # Default server host to connect to
+  server_host: localhost
+  
+  # Default server port
+  server_port: 5000
+  
+  # Connection timeout (seconds)
+  connection_timeout: 10
+  
+  # Read operation timeout (seconds)
+  read_timeout: 30
+  
+  # Write operation timeout (seconds)
+  write_timeout: 10
+
+# Logging Configuration
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: INFO
+  
+  # Enable protocol-level metrics logging
+  transport_metrics: true
+  
+  # Log format (simple or json)
+  format: simple
+  
+  # Log file path (empty = stdout only)
+  file: chatroom.log
+  
+  # Maximum log file size before rotation (MB)
+  max_size: 10
+  
+  # Number of rotated log files to keep
+  backup_count: 5
+
+# Encryption Configuration
+encryption:
+  # RSA key size in bits
+  key_size: 1024
+  
+  # Buffer size for send/receive operations
+  buffer_size: 1024
+
+# Monitoring Configuration
+monitoring:
+  # Collect protocol metrics
+  collect_metrics: true
+  
+  # Log metrics interval (seconds)
+  metrics_interval: 60
+  
+  # Track per-connection metrics
+  per_connection_metrics: true
+  
+  # Enable performance profiling
+  profile_enabled: false
