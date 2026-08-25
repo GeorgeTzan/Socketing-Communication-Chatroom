@@ -1,6 +1,7 @@
 # [2026-08-25] Protocol factory for creating and managing transport protocols
 # Handles protocol selection, configuration, and fallback logic
 
+import asyncio
 import os
 from typing import Optional, List, Type
 from transport_adapter import TransportProtocol
@@ -184,7 +185,6 @@ class DualStackTransport(TransportProtocol):
         ]
         
         try:
-            import asyncio
             done, pending = await asyncio.wait(
                 tasks,
                 return_when=asyncio.FIRST_COMPLETED
@@ -240,7 +240,6 @@ class DualStackTransport(TransportProtocol):
                 
                 # Use timeout for non-primary protocols
                 timeout = fallback_timeout if i > 0 else 10
-                import asyncio
                 conn = await asyncio.wait_for(
                     transport.connect(host, port),
                     timeout=timeout
@@ -269,7 +268,3 @@ class DualStackTransport(TransportProtocol):
     def protocol_name(self) -> str:
         """Return protocol name."""
         return "dual-stack"
-
-
-# Import asyncio at module level for type hints
-import asyncio
