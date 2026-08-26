@@ -92,7 +92,22 @@ class UTPConnection(Connection):
                 del self.recv_buffer[:len(result)]
                 return result
             
-            # Otherwise, wait for new data from socket
+            # For server-side connections, wait for data in buffer
+            if self.is_server:
+                # Wait for data to arrive in buffer (with timeout)
+                max_wait = 30  # 30 second timeout
+                wait_count = 0
+                while not self.recv_buffer and not self._closed and wait_count < max_wait * 100:
+                    await asyncio.sleep(0.01)
+                    wait_count += 1
+                
+                if self.recv_buffer:
+                    result = bytes(self.recv_buffer[:bufsize])
+                    del self.recv_buffer[:len(result)]
+                    return result
+                return b""
+            
+            # For client-side connections, receive from socket
             loop = asyncio.get_event_loop()
             data, _ = await loop.sock_recvfrom(self.sock, bufsize)
             
@@ -255,7 +270,13 @@ class UTPTransport(TransportProtocol):
                             self.connections[addr] = conn
                             await self.pending_connections.put((conn, addr))
                     
-                    # Forward packet to connection (simplified)
+                    # Forward packet to connection via buffer
+                    if addr in self.connections:
+                        conn = self.connections[addr]
+                        # Extract payload and add to connection's receive buffer
+                        payload = data[9:9+payload_len] if payload_len > 0 else b""
+                        conn.recv_buffer.extend(payload)
+                        conn.ack_num = seq
                 except Exception:
                     await asyncio.sleep(0.01)
         except Exception:

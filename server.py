@@ -5,6 +5,7 @@ import asyncio
 import rsa
 import os
 import sys
+import struct
 from typing import Dict, Optional, Tuple
 from transport_adapter import Connection, TransportProtocol
 from protocol_factory import create_transport, get_primary_protocol, DualStackTransport
@@ -35,6 +36,70 @@ def get_next_conn_id() -> str:
     return f"conn_{server_conn_id_counter}"
 
 
+async def recv_exact(conn: Connection, nbytes: int) -> bytes:
+    """Receive exactly nbytes from connection.
+    
+    Handles TCP stream framing by reading until we have enough bytes.
+    
+    Args:
+        conn: Connection object
+        nbytes: Exact number of bytes to receive
+        
+    Returns:
+        Bytes data (exactly nbytes)
+        
+    Raises:
+        ConnectionError: If connection closes before nbytes received
+    """
+    data = bytearray()
+    while len(data) < nbytes:
+        chunk = await conn.recv(nbytes - len(data))
+        if not chunk:
+            raise ConnectionError(f"Connection closed, got {len(data)}/{nbytes} bytes")
+        data.extend(chunk)
+    return bytes(data)
+
+
+async def send_message(conn: Connection, data: bytes) -> None:
+    """Send a message with length prefix.
+    
+    Prepends a 4-byte big-endian length prefix for framing.
+    
+    Args:
+        conn: Connection object
+        data: Message bytes to send
+    """
+    length_prefix = struct.pack("!I", len(data))
+    await conn.sendall(length_prefix + data)
+
+
+async def recv_message(conn: Connection, max_size: int = 65536) -> bytes:
+    """Receive a message with length prefix.
+    
+    Reads 4-byte big-endian length prefix then reads exact message bytes.
+    
+    Args:
+        conn: Connection object
+        max_size: Maximum message size to prevent DoS
+        
+    Returns:
+        Message bytes (without length prefix)
+        
+    Raises:
+        ConnectionError: If length invalid or connection closes
+    """
+    length_data = await recv_exact(conn, 4)
+    msg_len = struct.unpack("!I", length_data)[0]
+    
+    if msg_len > max_size:
+        raise ConnectionError(f"Message too large: {msg_len} > {max_size}")
+    
+    if msg_len == 0:
+        return b""
+    
+    return await recv_exact(conn, msg_len)
+
+
 async def broadcast(message: bytes, sender_conn_id: str) -> None:
     """Broadcast message to all clients except sender.
     
@@ -47,7 +112,7 @@ async def broadcast(message: bytes, sender_conn_id: str) -> None:
         if conn_id != sender_conn_id:
             try:
                 # Message is already encrypted, just forward it
-                await client_conn.sendall(message)
+                await send_message(client_conn, message)
                 metrics.record_send(conn_id, len(message))
             except Exception as e:
                 logger.warning(f"Failed to send message to {conn_id}: {e}")
@@ -99,10 +164,10 @@ async def handle_client(conn: Connection, addr: Tuple[str, int], protocol: str) 
         logger.info(f"Client connected via {protocol.upper()}: {addr} ({conn_id})")
         
         # Send server public key
-        await conn.sendall(public_key.save_pkcs1("PEM"))
+        await send_message(conn, public_key.save_pkcs1("PEM"))
         
         # Receive client public key
-        key_data = await conn.recv(1024)
+        key_data = await recv_message(conn, max_size=8192)
         if not key_data:
             logger.warning(f"Client {conn_id} disconnected without sending public key")
             return
@@ -111,7 +176,7 @@ async def handle_client(conn: Connection, addr: Tuple[str, int], protocol: str) 
         metrics.record_receive(conn_id, len(key_data))
         
         # Receive encrypted client name
-        name_data = await conn.recv(1024)
+        name_data = await recv_message(conn, max_size=8192)
         if not name_data:
             logger.warning(f"Client {conn_id} disconnected without sending name")
             return
@@ -126,7 +191,7 @@ async def handle_client(conn: Connection, addr: Tuple[str, int], protocol: str) 
         # Message receive loop
         while not conn.closed:
             try:
-                data = await asyncio.wait_for(conn.recv(1024), timeout=30.0)
+                data = await asyncio.wait_for(recv_message(conn, max_size=65536), timeout=30.0)
                 
                 if not data:
                     logger.debug(f"Client {conn_id} sent empty data (connection closing)")
@@ -243,3 +308,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

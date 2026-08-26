@@ -8,10 +8,63 @@ import threading
 import rsa
 import os
 import sys
+import struct
 from typing import Optional
 from transport_adapter import Connection
 from protocol_factory import create_transport, get_primary_protocol
 from metrics import get_metrics, setup_logging, logger
+
+
+async def recv_exact(conn: Connection, nbytes: int) -> bytes:
+    """Receive exactly nbytes from connection."""
+    data = bytearray()
+    while len(data) < nbytes:
+        chunk = await conn.recv(nbytes - len(data))
+        if not chunk:
+            raise ConnectionError(f"Connection closed, got {len(data)}/{nbytes} bytes")
+        data.extend(chunk)
+    return bytes(data)
+
+
+async def send_message(conn: Connection, data: bytes) -> None:
+    """Send a message with length prefix.
+    
+    Prepends a 4-byte big-endian length prefix for framing.
+    
+    Args:
+        conn: Connection object
+        data: Message bytes to send
+    """
+    length_prefix = struct.pack("!I", len(data))
+    await conn.sendall(length_prefix + data)
+
+
+async def recv_message(conn: Connection, max_size: int = 65536) -> bytes:
+    """Receive a message with length prefix.
+    
+    Reads 4-byte big-endian length prefix then reads exact message bytes.
+    
+    Args:
+        conn: Connection object
+        max_size: Maximum message size to prevent DoS
+        
+    Returns:
+        Message bytes (without length prefix)
+        
+    Raises:
+        ConnectionError: If length invalid or connection closes
+    """
+    length_data = await recv_exact(conn, 4)
+    msg_len = struct.unpack("!I", length_data)[0]
+    
+    if msg_len > max_size:
+        raise ConnectionError(f"Message too large: {msg_len} > {max_size}")
+    
+    if msg_len == 0:
+        return b""
+    
+    return await recv_exact(conn, msg_len)
+
 
 
 class AsyncClientThread(threading.Thread):
@@ -145,12 +198,19 @@ class CLIENT:
         else:
             self.ConnectButton.config(state=tk.DISABLED)
     
+    def _update_ui(self, callback):
+        """Thread-safe UI update helper. Schedules callback on main thread."""
+        self.root.after(0, callback)
+    
     def log_message(self, message: str) -> None:
-        """Add a message to the chat display."""
-        self.text_area.config(state=tk.NORMAL)
-        self.text_area.insert(tk.END, message + "\n")
-        self.text_area.see(tk.END)
-        self.text_area.config(state=tk.DISABLED)
+        """Add a message to the chat display (thread-safe)."""
+        def _add_message():
+            self.text_area.config(state=tk.NORMAL)
+            self.text_area.insert(tk.END, message + "\n")
+            self.text_area.see(tk.END)
+            self.text_area.config(state=tk.DISABLED)
+        
+        self._update_ui(_add_message)
     
     def on_closing(self):
         """Handle window close event."""
@@ -172,13 +232,17 @@ class CLIENT:
         self.async_thread.submit(self._close_connection())
         self.server_connection = None
         self.not_connected = True
-        self.status_var.set("Disconnected")
-        self.status_label.config(foreground="red")
-        self.ConnectButton.config(state=tk.NORMAL)
-        self.DisconnectButton.config(state=tk.DISABLED)
-        self.msg_entry.config(state=tk.DISABLED)
-        self.SendButton.config(state=tk.DISABLED)
-        self.log_message("--- Disconnected from server ---")
+        
+        def update_ui():
+            self.status_var.set("Disconnected")
+            self.status_label.config(foreground="red")
+            self.ConnectButton.config(state=tk.NORMAL)
+            self.DisconnectButton.config(state=tk.DISABLED)
+            self.msg_entry.config(state=tk.DISABLED)
+            self.SendButton.config(state=tk.DISABLED)
+            self.log_message("--- Disconnected from server ---")
+        
+        self._update_ui(update_ui)
     
     def on_connect_clicked(self):
         """Handle connect button click."""
@@ -196,7 +260,6 @@ class CLIENT:
             port = int(self.port_var.get())
             
             self.log_message(f"Connecting via {self.protocol.upper()} to {ip}:{port}...")
-            self.root.update()
             
             # Create transport with fallback
             transport = create_transport(
@@ -209,45 +272,53 @@ class CLIENT:
             self.metrics.register_connection(self.conn_id, self.protocol, f"{ip}:{port}")
             
             # Receive server public key
-            key_data = await self.server_connection.recv(1024)
+            key_data = await recv_message(self.server_connection, max_size=8192)
             self.public_key_other = rsa.PublicKey.load_pkcs1(key_data)
             self.metrics.record_receive(self.conn_id, len(key_data))
             
             # Send our public key
-            await self.server_connection.sendall(self.public_key.save_pkcs1("PEM"))
+            await send_message(self.server_connection, self.public_key.save_pkcs1("PEM"))
             self.metrics.record_send(self.conn_id, len(self.public_key.save_pkcs1("PEM")))
             
             # Send encrypted name
             encrypted_name = rsa.encrypt(self.name.encode(), self.public_key_other)
-            await self.server_connection.sendall(encrypted_name)
+            await send_message(self.server_connection, encrypted_name)
             self.metrics.record_send(self.conn_id, len(encrypted_name))
             self.metrics.record_message_sent(self.conn_id)
             
-            self.not_connected = False
-            self.log_message(f"Connected via {self.protocol.upper()}!")
-            self.status_var.set(f"Connected via {self.protocol.upper()}")
-            self.status_label.config(foreground="green")
-            self.DisconnectButton.config(state=tk.NORMAL)
-            self.msg_entry.config(state=tk.NORMAL)
-            self.SendButton.config(state=tk.NORMAL)
+            # Update UI on main thread
+            def update_ui():
+                self.not_connected = False
+                self.log_message(f"Connected via {self.protocol.upper()}!")
+                self.status_var.set(f"Connected via {self.protocol.upper()}")
+                self.status_label.config(foreground="green")
+                self.DisconnectButton.config(state=tk.NORMAL)
+                self.msg_entry.config(state=tk.NORMAL)
+                self.SendButton.config(state=tk.NORMAL)
+            
+            self._update_ui(update_ui)
             
             # Start receiving messages
             self.async_thread.submit(self.receive_messages())
         
         except asyncio.TimeoutError:
-            self.log_message("Connection timeout! Could not connect to server.")
-            self.status_var.set("Connection failed (timeout)")
-            self.status_label.config(foreground="red")
-            self.not_connected = True
-            self.ConnectButton.config(state=tk.NORMAL)
+            def update_ui():
+                self.log_message("Connection timeout! Could not connect to server.")
+                self.status_var.set("Connection failed (timeout)")
+                self.status_label.config(foreground="red")
+                self.not_connected = True
+                self.ConnectButton.config(state=tk.NORMAL)
+            self._update_ui(update_ui)
             self.metrics.record_error(self.conn_id)
         
         except Exception as e:
-            self.log_message(f"Failed to connect: {e}")
-            self.status_var.set(f"Connection failed: {type(e).__name__}")
-            self.status_label.config(foreground="red")
-            self.not_connected = True
-            self.ConnectButton.config(state=tk.NORMAL)
+            def update_ui():
+                self.log_message(f"Failed to connect: {e}")
+                self.status_var.set(f"Connection failed: {type(e).__name__}")
+                self.status_label.config(foreground="red")
+                self.not_connected = True
+                self.ConnectButton.config(state=tk.NORMAL)
+            self._update_ui(update_ui)
             self.metrics.record_error(self.conn_id)
             logger.error(f"Connection failed: {e}")
     
@@ -257,7 +328,7 @@ class CLIENT:
             while self.server_connection is not None and not self.server_connection.closed:
                 try:
                     data = await asyncio.wait_for(
-                        self.server_connection.recv(1024),
+                        recv_message(self.server_connection, max_size=65536),
                         timeout=30.0
                     )
                     
@@ -315,7 +386,7 @@ class CLIENT:
         """Async send message."""
         try:
             if self.server_connection is not None:
-                await self.server_connection.sendall(encrypted_msg)
+                await send_message(self.server_connection, encrypted_msg)
                 self.metrics.record_send(self.conn_id, len(encrypted_msg))
                 self.metrics.record_message_sent(self.conn_id)
                 self.log_message(message)
