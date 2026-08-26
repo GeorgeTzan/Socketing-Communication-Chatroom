@@ -162,7 +162,7 @@ class CLIENT:
         
         # Status label
         self.status_var = tk.StringVar(value="Not connected")
-        self.status_label = ttk.Label(conn_frame, textvariable=self.status_var, foreground="red")
+        self.status_label = tk.Label(conn_frame, textvariable=self.status_var, foreground="red")
         self.status_label.grid(row=1, column=3, columnspan=2, padx=5, pady=5, sticky="w")
         
         # Disconnect button
