@@ -1,0 +1,9 @@
+{"kind": "refinement.no_feedback", "status": "waiting_feedback", "pr_number": 3, "last_seen_comment_id": 0, "ts": "2026-08-25T13:10:37.318727Z"}
+{"kind": "refinement.no_feedback", "status": "waiting_feedback", "pr_number": 3, "last_seen_comment_id": 0, "ts": "2026-08-25T13:15:41.000794Z"}
+{"kind": "refinement.no_feedback", "status": "waiting_feedback", "pr_number": 3, "last_seen_comment_id": 0, "ts": "2026-08-25T13:20:44.595073Z"}
+{"kind": "refinement.inspector_fail", "status": "cycle_failed", "pr_number": 3, "last_seen_comment_id": 0, "feedback_count": 1, "ts": "2026-08-25T13:30:16.057755Z"}
+{"kind": "refinement.copilot_failed", "status": "paused_blocked", "reason": "Copilot run failed", "pr_number": 3, "last_seen_comment_id": 0, "feedback_count": 1, "ts": "2026-08-25T13:42:37.226272Z"}
+{"kind": "refinement.inspector_pass", "status": "cycle_passed", "pr_number": 3, "last_seen_comment_id": 5410993442, "feedback_count": 1, "ts": "2026-08-25T13:51:09.147967Z"}
+{"kind": "refinement.no_feedback", "status": "waiting_feedback", "pr_number": 3, "last_seen_comment_id": 5410993442, "ts": "2026-08-25T13:51:47.572468Z"}
+{"kind": "refinement.inspector_fail", "status": "cycle_failed", "pr_number": 3, "last_seen_comment_id": 5410993442, "feedback_count": 1, "ts": "2026-08-25T14:04:19.408047Z"}
+{"kind": "refinement.inspector_fail", "status": "cycle_failed", "pr_number": 3, "last_seen_comment_id": 5410993442, "feedback_count": 1, "ts": "2026-08-26T06:37:57.212038Z"}
